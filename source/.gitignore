@@ -37,3 +37,8 @@ dependencies.lock
 .component_hash
 sdkconfig
 sdkconfig.old
+
+.clangd
+build/
+sdkconfig
+sdkconfig.old

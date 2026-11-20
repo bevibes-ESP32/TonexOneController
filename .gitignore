@@ -1,6 +1,6 @@
 # macOS folder attributes
 .DS_Store
-
+.vscode
 build_distrib/temp
 
 # ignore EEZ Studio state files
