@@ -85,6 +85,12 @@ The Save and Reboot buttons on each configuration page will save all settings an
 ## External Footswitches (Ext)
 New in V1.0.8.2. The External Footswitches category allows externally-connected footswitches to be configured.
 
+On supported hardware, the **External FS** page includes an SX1509 I2C address selector. Select the same 7-bit address as the address jumpers on the SX1509 board, then save and reboot. Valid addresses are `0x3E`, `0x3F`, `0x70`, and `0x71`; the default remains `0x71` to preserve existing installations.
+
+The selector is enabled for Waveshare 4.3B, 7B, 7"/4.3" non-B development boards, 1.69, Zero and 1.9 Touch; ESP32 DevKitC; M5AtomS3R; LilyGo T-Display S3; and JC3248W535. These platforms have documented external SX1509 wiring, and the I2C addresses used by their onboard peripherals do not overlap the four SX1509 addresses.
+
+The selector is hidden on Waveshare 3.5B because its touch controller is documented to behave incorrectly when an SX1509 is connected. It is also hidden on platforms without verified external SX1509 wiring (Waveshare 4.3C, Waveshare 1.69 Touch, JC4880P4, Pirate Midi Polar Pro, and Pirate Midi Polar Max V2). On those platforms the firmware retains the existing `0x71` default.
+
 ### Preset Switch Layout
 This controls how preset switching will be handled. Options are as follows.
 | Name | Total Switches | Arrangement | Bank Up | Bank Down | Notes

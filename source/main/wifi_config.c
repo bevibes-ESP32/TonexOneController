@@ -47,6 +47,7 @@ limitations under the License.
 #include "mdns.h"
 #include <esp_http_server.h>
 #include "control.h"
+#include "main.h"
 #include "wifi_config.h"
 #include "usb_comms.h"
 #include "task_priorities.h"
@@ -499,6 +500,8 @@ static void wifi_build_config_json(void)
     json_gen_obj_set_string(&pWebConfig->jstr, "MDNS_NAME", str_val);
 
     json_gen_obj_set_int(&pWebConfig->jstr, "EXTFS_PS_LAYOUT", control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_PRESET_LAYOUT));
+    json_gen_obj_set_int(&pWebConfig->jstr, "SX1509_ADDR", control_get_config_item_int(CONFIG_ITEM_SX1509_ADDRESS));
+    json_gen_obj_set_int(&pWebConfig->jstr, "SX1509_ADDR_SUPPORTED", TONEX_CONTROLLER_CONFIGURABLE_SX1509_ADDRESS);
 
     json_gen_obj_set_int(&pWebConfig->jstr, "EXTFS_ES1_SW", control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_SW));
     json_gen_obj_set_int(&pWebConfig->jstr, "EXTFS_ES1_CC", control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_CC));
@@ -1000,6 +1003,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
                         if (json_obj_get_int(&pWebConfig->jctx, "EXTFS_PS_LAYOUT", &int_val) == OS_SUCCESS)
                         {
                             control_set_config_item_int(CONFIG_ITEM_EXT_FOOTSW_PRESET_LAYOUT, int_val);
+                        }
+
+                        if (json_obj_get_int(&pWebConfig->jctx, "SX1509_ADDR", &int_val) == OS_SUCCESS)
+                        {
+                            control_set_config_item_int(CONFIG_ITEM_SX1509_ADDRESS, int_val);
                         }
 
                         if (json_obj_get_int(&pWebConfig->jctx, "EXTFS_ES1_SW", &int_val) == OS_SUCCESS) 

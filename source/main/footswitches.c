@@ -1088,7 +1088,7 @@ void footswitches_init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2C
 #endif
 
     // try to init I2C IO expander
-    if (SX1509_Init(bus_handle, I2CMutex) == ESP_OK)
+    if (SX1509_Init(bus_handle, I2CMutex, (uint8_t)control_get_config_item_int(CONFIG_ITEM_SX1509_ADDRESS)) == ESP_OK)
     {
         ESP_LOGI(TAG, "Found External IO Expander");
 

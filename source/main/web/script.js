@@ -3739,6 +3739,8 @@ function processReturnCmd(data) {
             configureParamSwitch("disablebpm", data['DISABLE_BPM']);
             
             configureParamSelect("extfslay", data['EXTFS_PS_LAYOUT']);
+            configureParamSelect("sx1509_addr", data['SX1509_ADDR']);
+            document.getElementById("sx1509_address_setting").hidden = !data['SX1509_ADDR_SUPPORTED'];
                                 
             configureParamSelect("extfx1sw", data['EXTFS_ES1_SW']);
             setParamValue("extfx1cc", data['EXTFS_ES1_CC']);
@@ -4025,6 +4027,7 @@ function saveSettings() {
         var disablebpm = disablebpmchk ? 1 : 0;
 
         var extfslay = document.getElementById("extfslay").value;  
+        var sx1509_addr = document.getElementById("sx1509_addr").value;
 
         var extfx1sw = document.getElementById("extfx1sw").value;  
         var extfx1cc = document.getElementById("extfx1cc").value;  
@@ -4108,6 +4111,7 @@ function saveSettings() {
                 "HIGH_TCH_SNS": parseInt(hitchsense),
                 "DISABLE_BPM": parseInt(disablebpm),                
                 "EXTFS_PS_LAYOUT": parseInt(extfslay),                        
+                "SX1509_ADDR": parseInt(sx1509_addr),
                 "EXTFS_ES1_SW": parseInt(extfx1sw),
                 "EXTFS_ES1_CC": parseInt(extfx1cc),
                 "EXTFS_ES1_V1": parseInt(extfx1v1),

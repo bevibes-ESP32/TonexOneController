@@ -25,7 +25,6 @@
 /* 
 ** Defines
 */
-#define SX1509_IC2_ADDRESS           0x71
 #define I2C_TIMEOUT_MS          	 10
 #define DEVICE_I2C_MASTER_FREQUENCY  400000
 
@@ -90,6 +89,14 @@ static uint8_t registers[LAST_USED_REGISTER];
 static const char *TAG = "app_SX1509";
 static SemaphoreHandle_t I2CMutexHandle;
 static i2c_master_dev_handle_t dev_handle;
+
+uint8_t SX1509_IsAddressValid(uint32_t address)
+{
+    return (address == SX1509_ADDRESS_3E) ||
+           (address == SX1509_ADDRESS_3F) ||
+           (address == SX1509_ADDRESS_70) ||
+           (address == SX1509_ADDRESS_71);
+}
 
 /****************************************************************************
 * NAME:        
@@ -298,9 +305,15 @@ static esp_err_t SX1509_read_register(uint8_t reg, uint8_t len)
 * RETURN:      none
 * NOTES:       none
 *****************************************************************************/
-esp_err_t SX1509_Init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CMutex)
+esp_err_t SX1509_Init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CMutex, uint8_t address)
 { 
     esp_err_t ret = ESP_FAIL;
+
+    if (!SX1509_IsAddressValid(address))
+    {
+        ESP_LOGE(TAG, "Invalid SX1509 I2C address 0x%02X", address);
+        return ESP_ERR_INVALID_ARG;
+    }
     
     // save handles
     I2CMutexHandle = I2CMutex;
@@ -310,7 +323,7 @@ esp_err_t SX1509_Init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CM
     // create device instance
     i2c_device_config_t dev_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = SX1509_IC2_ADDRESS,
+        .device_address = address,
         .scl_speed_hz = DEVICE_I2C_MASTER_FREQUENCY,
     };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_config, &dev_handle));

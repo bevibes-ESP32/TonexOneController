@@ -1629,6 +1629,17 @@
             <div class="col py-3 text-white">
             <h5 class="selected_text">External Expander Footswitches</h5>
                 <p class="lead">     
+                    <div class="container" id="sx1509_address_setting" hidden>
+                        <label class="form-check-label" for="sx1509_addr">SX1509 I2C Address (7-bit)</label>
+                        <select class="form-select select_style" id="sx1509_addr">
+                            <option value="62">0x3E</option>
+                            <option value="63">0x3F</option>
+                            <option value="112">0x70</option>
+                            <option value="113" selected>0x71 (default)</option>
+                        </select>
+                        <small class="form-text text-white-50">Set the SX1509 address jumpers to match this value.</small>
+                    </div>
+                    <br>
                     <div class="container">
                         <label class="form-check-label" for="extfslay">Preset Switch Layout</label>
                         <select class="form-select select_style" id="extfslay" onchange="updatePresetOrderBanks()">

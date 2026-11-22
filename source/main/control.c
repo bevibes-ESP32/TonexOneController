@@ -43,6 +43,7 @@ limitations under the License.
 #include "wifi_config.h"
 #include "task_priorities.h"
 #include "tonex_params.h"
+#include "SX1509.h"
 #include "valeton_params.h"
 #include "midi_helper.h"
 #include "leds.h"
@@ -59,6 +60,7 @@ limitations under the License.
 #define NVS_USERDATA_PRESET_ORDER_CONF      "porderconf"
 #define NVS_USERDATA_PC_MAP_CONF            "pcmapconf"
 #define NVS_USERDATA_LCD_PANEL_CONF         "lcdpanel"
+#define NVS_USERDATA_SX1509_ADDRESS         "sx1509addr"
 
 #define MAX_TEXT_LENGTH                     128
 #define MAX_BT_CUSTOM_NAME                  25    
@@ -249,6 +251,7 @@ typedef struct
     tSkinConfig SkinConfig;
     tPCMapConfig PCMapConfig;
     tLCDPanelConfig LCDPanelConfig;
+    uint8_t SX1509Address;
 } tConfigData;
 
 typedef struct
@@ -930,6 +933,22 @@ static uint8_t process_control_command(tControlMessage* message)
                 {
                     ESP_LOGI(TAG, "Config set LCD porch %d", (int)message->Value);
                     ControlData.ConfigData.LCDPanelConfig.Porch = (uint16_t)message->Value;
+                } break;
+
+                case CONFIG_ITEM_SX1509_ADDRESS:
+                {
+#if TONEX_CONTROLLER_CONFIGURABLE_SX1509_ADDRESS
+                    if (SX1509_IsAddressValid(message->Value))
+                    {
+                        ControlData.ConfigData.SX1509Address = (uint8_t)message->Value;
+                    }
+                    else
+                    {
+                        ESP_LOGW(TAG, "Ignoring invalid SX1509 I2C address 0x%02X", (unsigned int)message->Value);
+                    }
+#else
+                    ESP_LOGW(TAG, "Ignoring SX1509 address setting on this hardware platform");
+#endif
                 } break;
             }
         } break;
@@ -1899,6 +1918,11 @@ uint32_t control_get_config_item_int(uint32_t item)
             value = (uint32_t)ControlData.ConfigData.LCDPanelConfig.Porch;
         } break;
 
+        case CONFIG_ITEM_SX1509_ADDRESS:
+        {
+            value = ControlData.ConfigData.SX1509Address;
+        } break;
+
         default:
         {
             ESP_LOGE(TAG, "Unknown/Invalid int parameter item %d", (int)item);            
@@ -2358,6 +2382,9 @@ static uint8_t SaveUserData(void)
     SaveUserConfigItem((void*)&ControlData.ConfigData.SkinConfig, sizeof(ControlData.ConfigData.SkinConfig), NVS_USERDATA_SKIN_CONF);
     SaveUserConfigItem((void*)&ControlData.ConfigData.PCMapConfig.PCMap, sizeof(ControlData.ConfigData.PCMapConfig.PCMap), NVS_USERDATA_PC_MAP_CONF);
     SaveUserConfigItem((void*)&ControlData.ConfigData.LCDPanelConfig, sizeof(ControlData.ConfigData.LCDPanelConfig), NVS_USERDATA_LCD_PANEL_CONF);
+#if TONEX_CONTROLLER_CONFIGURABLE_SX1509_ADDRESS
+    SaveUserConfigItem((void*)&ControlData.ConfigData.SX1509Address, sizeof(ControlData.ConfigData.SX1509Address), NVS_USERDATA_SX1509_ADDRESS);
+#endif
     
     return 1;
 }
@@ -2428,6 +2455,22 @@ static uint8_t LoadUserData(void)
     {
         SaveUserConfigItem((void*)&ControlData.ConfigData.LCDPanelConfig, sizeof(ControlData.ConfigData.LCDPanelConfig), NVS_USERDATA_LCD_PANEL_CONF);
     }
+
+#if TONEX_CONTROLLER_CONFIGURABLE_SX1509_ADDRESS
+    if (LoadUserConfigItem((void*)&ControlData.ConfigData.SX1509Address, sizeof(ControlData.ConfigData.SX1509Address), NVS_USERDATA_SX1509_ADDRESS) != ESP_OK)
+    {
+        SaveUserConfigItem((void*)&ControlData.ConfigData.SX1509Address, sizeof(ControlData.ConfigData.SX1509Address), NVS_USERDATA_SX1509_ADDRESS);
+    }
+
+    if (!SX1509_IsAddressValid(ControlData.ConfigData.SX1509Address))
+    {
+        ESP_LOGW(TAG, "Config SX1509 I2C address invalid");
+        ControlData.ConfigData.SX1509Address = SX1509_ADDRESS_DEFAULT;
+        SaveUserConfigItem((void*)&ControlData.ConfigData.SX1509Address, sizeof(ControlData.ConfigData.SX1509Address), NVS_USERDATA_SX1509_ADDRESS);
+    }
+#else
+    ControlData.ConfigData.SX1509Address = SX1509_ADDRESS_DEFAULT;
+#endif
 
     
     // perform sanity check on values
@@ -3062,6 +3105,7 @@ void control_set_default_config(void)
 
     ControlData.ConfigData.LCDPanelConfig.PixelClock = LCD_PANEL_CONFIG_PIXEL_CLOCK_DEFAULT;
     ControlData.ConfigData.LCDPanelConfig.Porch = LCD_PANEL_CONFIG_PORCH_DEFAULT;
+    ControlData.ConfigData.SX1509Address = SX1509_ADDRESS_DEFAULT;
 }
 
 /****************************************************************************
