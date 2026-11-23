@@ -105,6 +105,7 @@ typedef struct
 
 static tFootswitchControl FootswitchControl;
 static SemaphoreHandle_t I2CMutexHandle;
+static portMUX_TYPE FootswitchBankMux = portMUX_INITIALIZER_UNLOCKED;
 
 static const __attribute__((unused)) tFootswitchLayoutEntry FootswitchLayouts[FOOTSWITCH_LAYOUT_LAST] = 
 {
@@ -134,9 +135,170 @@ static const __attribute__((unused)) tFootswitchLayoutEntry FootswitchLayouts[FO
 * RETURN:      
 * NOTES:       
 *****************************************************************************/
-static uint8_t get_banks_count(tFootswitchLayoutEntry* layout)
+static uint8_t get_banks_count(const tFootswitchLayoutEntry* layout)
 {
-    return ((usb_get_max_presets_for_connected_modeller() - 1) / layout->presets_per_bank) + 1;
+    uint8_t max_presets = usb_get_max_presets_for_connected_modeller();
+    if ((max_presets == 0) || (layout->presets_per_bank == 0))
+    {
+        return 0;
+    }
+
+    return ((max_presets - 1) / layout->presets_per_bank) + 1;
+}
+
+/****************************************************************************
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
+*****************************************************************************/
+static uint16_t footswitch_get_current_bank(tFootswitchHandler* handler)
+{
+    uint16_t current_bank;
+    portENTER_CRITICAL(&FootswitchBankMux);
+    current_bank = handler->current_bank;
+    portEXIT_CRITICAL(&FootswitchBankMux);
+    return current_bank;
+}
+
+/****************************************************************************
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
+*****************************************************************************/
+static void footswitch_change_bank(tFootswitchHandler* handler, const tFootswitchLayoutEntry* layout, uint8_t bank_up)
+{
+    uint8_t banks_count = get_banks_count(layout);
+    uint8_t loop_around = control_get_config_item_int(CONFIG_ITEM_LOOP_AROUND);
+    uint16_t current_bank;
+    uint16_t new_bank;
+
+    if (banks_count == 0)
+    {
+        return;
+    }
+
+    portENTER_CRITICAL(&FootswitchBankMux);
+    current_bank = handler->current_bank;
+    if (current_bank >= banks_count)
+    {
+        current_bank = banks_count - 1;
+    }
+    new_bank = current_bank;
+
+    if (bank_up)
+    {
+        if (loop_around)
+        {
+            new_bank = ((current_bank + 1) < banks_count) ? (current_bank + 1) : 0;
+        }
+        else if ((current_bank + 1) < banks_count)
+        {
+            new_bank++;
+        }
+    }
+    else if (loop_around)
+    {
+        new_bank = (current_bank > 0) ? (current_bank - 1) : (banks_count - 1);
+    }
+    else if (current_bank > 0)
+    {
+        new_bank--;
+    }
+
+    handler->current_bank = new_bank;
+    portEXIT_CRITICAL(&FootswitchBankMux);
+
+    if (new_bank != current_bank)
+    {
+        ESP_LOGI(TAG, "Footswitch banked %s %d", bank_up ? "up" : "down", new_bank);
+        control_request_bank_index(new_bank);
+    }
+}
+
+/****************************************************************************
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
+*****************************************************************************/
+static void footswitch_toggle_effect(tExternalFootswitchEffectConfig* config, uint8_t index)
+{
+    uint16_t param;
+    float new_value;
+    tModellerParameter* param_ptr;
+
+    param = midi_helper_get_param_for_change_num(config->CC, config->Value_1, config->Value_2);
+    ESP_LOGI(TAG, "Footswitch FX pressed. Index %d. Param %d", (int)index, (int)param);
+
+    if (param == TONEX_UNKNOWN)
+    {
+        return;
+    }
+
+    if (control_get_connected_modeller_params_locked_access(&param_ptr) == ESP_OK)
+    {
+        if (param_ptr[param].Type == MODELLER_PARAM_TYPE_SWITCH)
+        {
+            if (param_ptr[param].Value == 0)
+            {
+                new_value = 1;
+            }
+            else
+            {
+                new_value = 0;
+            }
+
+            control_release_connected_modeller_params_locked_access();
+            usb_modify_parameter(param, new_value);
+        }
+        else if (param_ptr[param].Type == MODELLER_PARAM_TYPE_SELECT)
+        {
+            uint8_t current_select_val = (uint8_t)param_ptr[param].Value;
+            control_release_connected_modeller_params_locked_access();
+
+            if (current_select_val == config->Value_1)
+            {
+                new_value = (float)config->Value_2;
+            }
+            else
+            {
+                new_value = (float)config->Value_1;
+            }
+
+            midi_helper_adjust_param_via_midi(config->CC, new_value);
+        }
+        else if (param_ptr[param].Type == MODELLER_PARAM_TYPE_RANGE)
+        {
+            float current_param_value = param_ptr[param].Value;
+            control_release_connected_modeller_params_locked_access();
+
+            float value_1 = midi_helper_scale_midi_to_float(param, config->Value_1);
+            float param_diff = fabs(current_param_value - value_1);
+
+            if (param_diff < 0.1f)
+            {
+                new_value = config->Value_2;
+            }
+            else
+            {
+                new_value = config->Value_1;
+            }
+
+            midi_helper_adjust_param_via_midi(config->CC, new_value);
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Footswitch FX Unknown param type");
+            new_value = 0.0f;
+        }
+
+        ESP_LOGI(TAG, "Footswitch FX Param %d changed to %d", (int)param, (int)new_value);
+    }
 }
 
 /****************************************************************************
@@ -533,45 +695,14 @@ static void __attribute__((unused)) footswitch_handle_banked(tFootswitchHandler*
                 // check if bank down is pressed
                 if (binary_val == layout->bank_down_switch_mask)
                 {
-                    if (control_get_config_item_int(CONFIG_ITEM_LOOP_AROUND))
-                    {
-                        uint8_t banks_count = get_banks_count(layout);
-                        uint8_t newBank = (handler->current_bank > 0) ? (handler->current_bank - 1) : (banks_count - 1);
-                        // bank down
-                        handler->current_bank = newBank;
-                        ESP_LOGI(TAG, "Footswitch banked down %d", handler->current_bank);
-                        control_request_bank_index(handler->current_bank);
-                    }
-                    else if (handler->current_bank > 0)
-                    {
-                        // bank down
-                        handler->current_bank--;   
-                        ESP_LOGI(TAG, "Footswitch banked down %d", handler->current_bank);
-                        control_request_bank_index(handler->current_bank);
-                    }
+                    footswitch_change_bank(handler, layout, 0);
 
                     handler->state = FOOTSWITCH_WAIT_RELEASE_1;
                 }
                 // check if bank up is pressed
                 else if (binary_val == layout->bank_up_switch_mask)
                 {
-                    uint8_t banks_count = get_banks_count(layout);
-
-                    if (control_get_config_item_int(CONFIG_ITEM_LOOP_AROUND))
-                    {
-                        uint8_t newBank = ((handler->current_bank + 1) < banks_count) ? (handler->current_bank + 1) : 0;
-                        // bank up
-                        handler->current_bank = newBank;
-                        ESP_LOGI(TAG, "Footswitch banked up %d", handler->current_bank);
-                        control_request_bank_index(handler->current_bank);
-                    }
-                    else if ((handler->current_bank + 1) < banks_count)
-                    {
-                        // bank up
-                        handler->current_bank++;
-                        ESP_LOGI(TAG, "Footswitch banked up %d", handler->current_bank);
-                        control_request_bank_index(handler->current_bank);
-                    }
+                    footswitch_change_bank(handler, layout, 1);
 
                     handler->state = FOOTSWITCH_WAIT_RELEASE_1;
                 }
@@ -585,7 +716,7 @@ static void __attribute__((unused)) footswitch_handle_banked(tFootswitchHandler*
             {
                 if (handler->index_pending != 0)
                 {
-                    uint8_t new_preset = handler->current_bank * layout->presets_per_bank;
+                    uint8_t new_preset = footswitch_get_current_bank(handler) * layout->presets_per_bank;
 
                     // get the index from the bit set
                     for (uint8_t loop = 1; loop < layout->presets_per_bank; loop++)    
@@ -685,9 +816,6 @@ static void footswitch_handle_effects(tFootswitchHandler* handler, tFootswitchEf
 {
     uint8_t loop; 
     uint8_t value;
-    uint16_t param;
-    float new_value;
-    tModellerParameter* param_ptr;
 
     // handle state
     switch (handler->state)
@@ -705,91 +833,7 @@ static void footswitch_handle_effects(tFootswitchHandler* handler, tFootswitchEf
                     {
                         if (value == 1)
                         {
-                            // get the parameter that corresponds to this Midi control change value
-                            param = midi_helper_get_param_for_change_num(fx_handler[loop].config.CC, fx_handler[loop].config.Value_1, fx_handler[loop].config.Value_2);
-
-                            ESP_LOGI(TAG, "Footswitch FX pressed. Index %d. Param %d", (int)loop, (int)param);
-
-                            if (param != TONEX_UNKNOWN)
-                            {
-                                // get the current value of the parameter
-                                if (control_get_connected_modeller_params_locked_access(&param_ptr) == ESP_OK)
-                                {
-                                    // is the parameter a boolean type?
-                                    if (param_ptr[param].Type == MODELLER_PARAM_TYPE_SWITCH)
-                                    {
-                                        // toggle the current value
-                                        if (param_ptr[param].Value == 0)
-                                        {
-                                            new_value = 1;
-                                        }
-                                        else
-                                        {
-                                            new_value = 0;
-                                        }
-
-                                        control_release_connected_modeller_params_locked_access();
-                                        usb_modify_parameter(param, new_value);
-                                    }
-                                    else if (param_ptr[param].Type == MODELLER_PARAM_TYPE_SELECT)
-                                    {
-                                        // save current value before we release the locked access
-                                        // select params are really integers saved as floats
-                                        uint8_t current_select_val = (uint8_t)param_ptr[param].Value;
-
-                                        // release access now as midi helper needs the mutex
-                                        control_release_connected_modeller_params_locked_access();
-
-                                        if (current_select_val == fx_handler[loop].config.Value_1)
-                                        {
-                                            new_value = (float)fx_handler[loop].config.Value_2;
-                                        }
-                                        else
-                                        {
-                                            new_value = (float)fx_handler[loop].config.Value_1;
-                                        }
-
-                                        midi_helper_adjust_param_via_midi(fx_handler[loop].config.CC, new_value);     
-                                    }
-                                    else if (param_ptr[param].Type == MODELLER_PARAM_TYPE_RANGE)
-                                    {
-                                        // save current value before we release the locked access
-                                        float current_param_value = param_ptr[param].Value;
-
-                                        // release access now as midi helper needs the mutex
-                                        control_release_connected_modeller_params_locked_access();
-
-                                        // flip between value 1 and value 2
-                                        // get value 1 (Midi 0..127) scaled back to a float to it can be compared with the current param value (a float)
-                                        float value_1 = midi_helper_scale_midi_to_float(param, fx_handler[loop].config.Value_1);
-
-                                        // note here: scaling Midi to float may result in rounding errors. This check is to make sure
-                                        // we can find the current value without missing it due to slight difference
-                                        float param_diff = fabs(current_param_value - value_1);
-
-                                        // debug
-                                        //ESP_LOGI(TAG, "Footswitch FX Param difference %f", param_diff);    
-
-                                        if (param_diff < 0.1f)
-                                        {
-                                            new_value = fx_handler[loop].config.Value_2;
-                                        }
-                                        else
-                                        {
-                                            new_value = fx_handler[loop].config.Value_1;
-                                        }
-
-                                        midi_helper_adjust_param_via_midi(fx_handler[loop].config.CC, new_value);      
-                                    } 
-                                    else
-                                    {
-                                        ESP_LOGI(TAG, "Footswitch FX Unknown param type");
-                                        new_value = 0.0f;
-                                    }                                  
-
-                                    ESP_LOGI(TAG, "Footswitch FX Param %d changed to %d", (int)param, (int)new_value);                                                                       
-                                }
-                            }
+                            footswitch_toggle_effect(&fx_handler[loop].config, loop);
 
                             // save the switch index
                             handler->index_pending = fx_handler[loop].config.Switch;
@@ -821,11 +865,91 @@ static void footswitch_handle_effects(tFootswitchHandler* handler, tFootswitchEf
 }
 
 /****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
+*****************************************************************************/
+void footswitch_handle_midi_cc(uint8_t value)
+{
+    uint8_t layout_index = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_PRESET_LAYOUT);
+    tFootswitchHandler* handler = &FootswitchControl.Handlers[FOOTSWITCH_HANDLER_EXTERNAL_PRESETS];
+
+    if (value <= 15)
+    {
+        if ((layout_index >= FOOTSWITCH_LAYOUT_LAST) || (layout_index == FOOTSWITCH_LAYOUT_DISABLED))
+        {
+            ESP_LOGW(TAG, "MIDI footswitch preset command ignored: external layout is disabled");
+            return;
+        }
+
+        const tFootswitchLayoutEntry* layout = &FootswitchLayouts[layout_index];
+        uint8_t max_presets = usb_get_max_presets_for_connected_modeller();
+        if ((max_presets == 0) || (layout->presets_per_bank == 0))
+        {
+            ESP_LOGW(TAG, "MIDI footswitch preset command ignored: no modeller preset list");
+            return;
+        }
+
+        if (value == 0 || value == 1)
+        {
+            footswitch_change_bank(handler, layout, value);
+        }
+        else if (value <= 13)
+        {
+            uint8_t preset_in_bank = value - 2;
+            uint16_t preset_index = footswitch_get_current_bank(handler) * layout->presets_per_bank + preset_in_bank;
+
+            if ((preset_in_bank < layout->presets_per_bank) && (preset_index < max_presets))
+            {
+                control_request_preset_index((uint8_t)preset_index);
+            }
+            else
+            {
+                ESP_LOGW(TAG, "MIDI footswitch preset slot %d is unavailable in the selected bank", preset_in_bank + 1);
+            }
+        }
+        else if (value == 14)
+        {
+            control_request_preset_down();
+        }
+        else
+        {
+            control_request_preset_up();
+        }
+
+        return;
+    }
+
+    if ((value >= 16) && (value <= 23))
+    {
+        uint8_t index = value - 16;
+        tExternalFootswitchEffectConfig config;
+
+        config.Switch = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_SW + (index * 4));
+        if (config.Switch == SWITCH_NOT_USED)
+        {
+            ESP_LOGW(TAG, "MIDI footswitch FX%d command ignored: no switch configured", index + 1);
+            return;
+        }
+
+        config.CC = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_CC + (index * 4));
+        config.Value_1 = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_VAL1 + (index * 4));
+        config.Value_2 = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_EFFECT1_VAL2 + (index * 4));
+        footswitch_toggle_effect(&config, index);
+        return;
+    }
+
+    ESP_LOGW(TAG, "Unsupported MIDI footswitch CC value %d", value);
+}
+
+/****************************************************************************
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
 *****************************************************************************/
 void footswitch_task(void *arg)
 {       
@@ -853,6 +977,19 @@ void footswitch_task(void *arg)
 
     // get preset switching layout for external footswitches
     FootswitchControl.external_switch_mode = control_get_config_item_int(CONFIG_ITEM_EXT_FOOTSW_PRESET_LAYOUT);
+    if ((FootswitchControl.external_switch_mode < FOOTSWITCH_LAYOUT_LAST) &&
+        (FootswitchControl.external_switch_mode != FOOTSWITCH_LAYOUT_DISABLED))
+    {
+        const tFootswitchLayoutEntry* layout = &FootswitchLayouts[FootswitchControl.external_switch_mode];
+        if (layout->presets_per_bank > 0)
+        {
+            uint16_t current_preset_order = control_get_current_preset_order_index();
+            portENTER_CRITICAL(&FootswitchBankMux);
+            FootswitchControl.Handlers[FOOTSWITCH_HANDLER_EXTERNAL_PRESETS].current_bank =
+                current_preset_order / layout->presets_per_bank;
+            portEXIT_CRITICAL(&FootswitchBankMux);
+        }
+    }
 
     // load config for external effect buttons
     for (configs = 0; configs < MAX_EXTERNAL_EFFECT_FOOTSWITCHES; configs++)

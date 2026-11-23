@@ -42,8 +42,10 @@ limitations under the License.
 #include "midi_helper_tonex.h"
 #include "midi_helper_valeton.h"
 #include "display.h"
+#include "footswitches.h"
 
 static const char *TAG = "app_midi_helper";
+#define MIDI_FOOTSWITCH_CC 105
 
 /****************************************************************************
 * NAME:        
@@ -263,7 +265,14 @@ uint8_t midi_helper_process_incoming_data(uint8_t* data, uint8_t length, uint8_t
 
                 if (enable_CC && (channel == midi_channel)) 
                 {
-                    midi_helper_adjust_param_via_midi(change_num, value);
+                    if (change_num == MIDI_FOOTSWITCH_CC)
+                    {
+                        footswitch_handle_midi_cc(value);
+                    }
+                    else
+                    {
+                        midi_helper_adjust_param_via_midi(change_num, value);
+                    }
                 }
 
                 // control change messages can be multiple appended together, 2 bytes each.
@@ -283,7 +292,14 @@ uint8_t midi_helper_process_incoming_data(uint8_t* data, uint8_t length, uint8_t
 
                         if (enable_CC && (channel == midi_channel)) 
                         {
-                            midi_helper_adjust_param_via_midi(change_num, value);
+                            if (change_num == MIDI_FOOTSWITCH_CC)
+                            {
+                                footswitch_handle_midi_cc(value);
+                            }
+                            else
+                            {
+                                midi_helper_adjust_param_via_midi(change_num, value);
+                            }
                         }
                     }
                 }

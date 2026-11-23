@@ -110,14 +110,26 @@ This controls how preset switching will be handled. Options are as follows.
 | 2x6A  | 12   |  2 rows of 6 |  5 + 6 | 1 + 2 | |
 | 2x6B  | 12   |  2 rows of 6 |  12 | 11 | Dedicated bank switches |
 
+### MIDI Footswitch
+The External Footswitch page also configures a MIDI footswitch on **CC 105**. CC 105 is unused by the TONEX and Valeton GP-5 parameter maps and is in the MIDI specification's undefined controller range. Incoming messages on the configured MIDI channel use these values:
+
+| CC value | Action |
+| -------- | ------ |
+| 0 / 1 | Bank down / bank up; bank wrapping follows the Loop Around setting |
+| 2-13 | Select preset slots 1-12 in the selected bank; unavailable slots in the selected layout are ignored |
+| 14 / 15 | Preset down / preset up |
+| 16-23 | Toggle FX1-FX8 as configured in the External Footswitch FX tabs |
+
+Bank and preset-slot actions use the External Footswitch Preset Switch Layout above; a disabled layout disables these commands. Bank changes update the displayed bank number. MIDI FX actions use the FX parameter/values configured on the same page and require that FX entry to be enabled by selecting a non-Disabled footswitch number; the selected physical switch number itself is not used for MIDI-triggered FX.
+
 <br>
 
 ### Effect Switching
-The effect switching configuration allows up to 5 footswitches to be dedicated to functions like enabling/disabling effects. 
+The effect switching configuration allows up to 8 footswitches to be dedicated to functions like enabling/disabling effects.
 <br>
 As this is configured using Midi Control Change values, these buttons can also do things like changing the volume of an amplifier between two different levels, or changing the type of modulation.
 <br>
-Press the "FX" buttons to select which effect change you wish to modify. For each of the 5 FX, the parameters are:
+Press the "FX" buttons to select which effect change you wish to modify. For each of the 8 FX, the parameters are:
 - Foot Switch Number. Footswitch 1 corresponds to the first switch, connected to the SX1509 PCB input 0
 - Control Change Number: the CC number of the effect you wish to change. Refer to the Tonex Pedal manual for a list of available numbers
 - Midi Value 1: the Midi value that will be sent to the above CC number, when the footswitch is first pressed

@@ -346,6 +346,7 @@ uint8_t* control_get_pc_map(void);
 void control_set_sync_complete(void);
 uint8_t control_get_sync_complete(void);
 uint32_t control_get_current_preset_index(void);
+uint32_t control_get_current_preset_order_index(void);
 void control_get_current_preset_name(char* dest);
 void control_update_footswitch_leds(void);
 esp_err_t control_get_connected_modeller_params_locked_access(tModellerParameter** param_ptr);

@@ -1491,6 +1491,18 @@ uint32_t control_get_current_preset_index(void)
 }  
 
 /****************************************************************************
+* NAME:
+* DESCRIPTION:
+* PARAMETERS:
+* RETURN:
+* NOTES:
+*****************************************************************************/
+uint32_t control_get_current_preset_order_index(void)
+{
+    return ControlData.PresetIndex;
+}
+
+/****************************************************************************
 * NAME:        
 * DESCRIPTION: 
 * PARAMETERS:  
